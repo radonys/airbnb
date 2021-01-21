@@ -1,0 +1,881 @@
+---
+title: "Data Mining and Predictive Analytics"
+output:
+  word_document: default
+  pdf_document:
+    latex_engine: s
+  html_notebook: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+# This chunk shows/hides the code in your final report. When echo = TRUE, the code
+# is shown in the report. When echo = FALSE, the code is hidden from the final report.
+# We would like to see your code, so please leave the setting as is during the course.
+# This chunk will not show up in your reports, so you can safely ignore its existence.
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+---
+
+#### Project Title: **Airbnb LA Business Analysis**
+
+---
+
+#### Market Assigned: **Los Angeles**
+
+---
+
+“We, the undersigned, certify that the report submitted is our original work; all authors participated in the work in a substantive way; all authors have seen and approved the report as submitted; the text, images, illustrations, and other items included in the manuscript do not carry any infringement/plagiarism issue upon any existing copyrighted materials.”
+
+
+---
+
+\center
+Member ID | Member Name 
+--- | ---
+Contact Member | Yash Srivastava
+Team Member 2 | Madhura Dighe
+Team Member 3 | Shohini Ghosh
+Team Member 4 | Surbhi Gupta
+Team Member 5 | Manas Mishra
+Team Member 6 | Pratik Pandey
+\center
+
+\pagebreak
+
+#### **Executive Summary**
+
+This report provides an analysis and evaluation of the current Los Angeles Airbnb market to help businesses make strategic decision regarding acquisition, update or renovation of Airbnb rentals. We have performed explanatory analysis to understand the impact of a market factor on the booking rate and used those significant factors to develop a predictive model that most accurately predicts the booking rate. 
+
+By exploring the Los Angeles Airbnb data, we were able to extract interesting and useful insights. For example, for risk neutral decisions, businesses should focus on locations such as Venice Beach and Marina Bay to maximize booking rate and not incur loss as these areas are major water recreation destination.
+
+---
+
+#### **Research Questions**
+
+To assist the business make risk neutral strategic decision, we focused on answering the following questions:
+
+Location, location, location:
+1)In which location should the business invest in to get high booking rate?
+
+Assessing the competition:
+2) What are the most common property and room type in order to maximize booking rate?
+
+Is it worth it:
+3) What is the impact of factors such as price, host property type (superhost) on the booking rate?
+
+Amenities the guests love:
+4)What upgrade and renovations can lead to an increase in the booking rate?
+
+Guests heart Airbnb:
+5) How are the reviews affecting the booking rate?
+
+Since Los Angeles already has a booming market for Airbnb, to have an edge in the competition, it is crucial to know from where to generate positive cash flow per month, which segment of market to target. We believe by answering the above research questions, businesses will be equipped to make informative decision.
+
+---
+
+#### **Methodology**
+
+```{r, include=FALSE}
+##### Libraries
+library("tidyverse")
+library("tidymodels")
+library("plotly")
+library("skimr")
+library("caret")
+library("lubridate")
+library("ggplot2")
+library("ggmap")
+library("e1071")
+library("fmsb")
+library("leaflet")
+library("sf")
+library("gbm")
+library("pROC")
+```
+
+##### **Load and Clean Data**
+
+```{r, include=FALSE}
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTrainLA.csv', 'airbnbTrainLA.csv')
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTestLA.csv', 'airbnbTestLA.csv')
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTrainLAamenities.csv', 'airbnbTrainLAamenities.csv')
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTestLAamenities.csv', 'airbnbTestLAamenities.csv')
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTrainLAhost_verifications.csv', 'airbnbTrainLAhost_verifications.csv')
+#download.file('https://github.com/radonys/airbnb/raw/master/data/airbnbTestLAhost_verifications.csv', 'airbnbTestLAhost_verifications.csv')
+```
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = T, results = "hide")
+trainLA <- read_csv("airbnbTrainLA.csv")
+testLA <- read_csv("airbnbTestLA.csv")
+```
+
+The Los Angeles data set has a lot of entries and is messy. Our project is data cleaning intensive and we have manipulated the data in ways we found could help us with our analysis
+
+The larger model for the Kaggle competition gave us an idea about important features overall for Airbnb market and high booking rates. Based on our analysis for the larger model, we converted a few columns to numeric types as numeric entries made more sense. We handled missing values in a variety of ways, filling them with median or mean values in some cases and with simple zeroes in others. Mean imputations were done carefully keeping in mind the bias that could generate. We factorized a few variables to fetch their levels. We mutated a few columns, dropped columns with single values and NA values. We processed the ‘amenities’ and ’ host_verification’ columns to gain more insight from our data.
+
+Once this was done, we analyzed our dependent variable, ‘high_booking_rate’, against a number of different features to determine the significance of these features on the booking rate.
+
+```{r, include=FALSE}
+##### Character to Numeric Variables
+
+trainLA$price <- as.numeric(gsub('\\$|,', '', trainLA$price))
+testLA$price <- as.numeric(gsub('\\$|,', '', testLA$price))
+
+trainLA$security_deposit <- as.numeric(gsub('\\$|,', '', trainLA$security_deposit))
+testLA$security_deposit <- as.numeric(gsub('\\$|,', '', testLA$security_deposit))
+
+trainLA$cleaning_fee <- as.numeric(gsub('\\$|,', '', trainLA$cleaning_fee))
+testLA$cleaning_fee <- as.numeric(gsub('\\$|,', '', testLA$cleaning_fee))
+
+trainLA$extra_people <- as.numeric(gsub('\\$|,', '', trainLA$extra_people))
+testLA$extra_people <- as.numeric(gsub('\\$|,', '', testLA$extra_people))
+
+trainLA$host_response_rate <- as.numeric(gsub('%', '', trainLA$host_response_rate))
+testLA$host_response_rate <- as.numeric(gsub('%', '', testLA$host_response_rate))
+```
+
+```{r, include=FALSE}
+##### Handle Missing Values
+
+###### Fill with zeroes
+
+trainLA$host_response_rate[is.na(trainLA$host_response_rate)] <- 0
+testLA$host_response_rate[is.na(testLA$host_response_rate)] <- 0
+
+trainLA$host_listings_count[is.na(trainLA$host_listings_count)] <- 0
+testLA$host_listings_count[is.na(testLA$host_listings_count)] <- 0
+
+trainLA$review_scores_accuracy[is.na(trainLA$review_scores_accuracy)] <- 0
+testLA$review_scores_accuracy[is.na(testLA$review_scores_accuracy)] <- 0
+
+trainLA$review_scores_checkin[is.na(trainLA$review_scores_checkin)] <- 0
+testLA$review_scores_checkin[is.na(testLA$review_scores_checkin)] <- 0
+
+trainLA$review_scores_cleanliness[is.na(trainLA$review_scores_cleanliness)] <- 0
+testLA$review_scores_cleanliness[is.na(testLA$review_scores_cleanliness)] <- 0
+
+trainLA$review_scores_communication[is.na(trainLA$review_scores_communication)] <- 0
+testLA$review_scores_communication[is.na(testLA$review_scores_communication)] <- 0
+
+trainLA$review_scores_location[is.na(trainLA$review_scores_location)] <- 0
+testLA$review_scores_location[is.na(testLA$review_scores_location)] <- 0
+
+trainLA$review_scores_value[is.na(trainLA$review_scores_value)] <- 0
+testLA$review_scores_value[is.na(testLA$review_scores_value)] <- 0
+
+trainLA$review_scores_rating[is.na(trainLA$review_scores_rating)] <- 0
+testLA$review_scores_rating[is.na(testLA$review_scores_rating)] <- 0
+```
+
+```{r, include=FALSE}
+###### Fill with False
+trainLA$host_identity_verified[is.na(trainLA$host_identity_verified)] <- FALSE
+testLA$host_identity_verified[is.na(testLA$host_identity_verified)] <- FALSE
+
+trainLA$host_is_superhost[is.na(trainLA$host_is_superhost)] <- FALSE
+testLA$host_is_superhost[is.na(testLA$host_is_superhost)] <- FALSE
+```
+
+```{r, include=FALSE}
+###### Fill with Median Date
+trainLA$host_since[is.na(trainLA$host_since)] <- as.Date("2015-11-19")
+testLA$host_since[is.na(testLA$host_since)] <- as.Date("2015-11-19")
+```
+
+```{r, include=FALSE}
+###### Fill with Mean Value
+trainLA$cleaning_fee[is.na(trainLA$cleaning_fee)] <- 94.5
+testLA$cleaning_fee[is.na(testLA$cleaning_fee)] <- 94.5
+
+trainLA$security_deposit[is.na(trainLA$security_deposit)] <- 490
+testLA$security_deposit[is.na(testLA$security_deposit)] <- 490
+```
+
+```{r, include=FALSE}
+###### Fill with Median Value
+trainLA$bedrooms[is.na(trainLA$bedrooms)] <- 1
+testLA$bedrooms[is.na(testLA$bedrooms)] <- 1
+
+trainLA$beds[is.na(trainLA$beds)] <- 1
+testLA$beds[is.na(testLA$beds)] <- 1
+
+trainLA$bathrooms[is.na(trainLA$bathrooms)] <- 1
+testLA$bathrooms[is.na(testLA$bathrooms)] <- 1
+```
+
+```{r, include=FALSE}
+##### Character to Factor
+trainLA$bed_type <- as.factor(trainLA$bed_type)
+testLA$bed_type <- as.factor(testLA$bed_type)
+
+trainLA$room_type <- as.factor(trainLA$room_type)
+testLA$room_type <- as.factor(testLA$room_type)
+
+trainLA$property_type <- as.factor(trainLA$property_type)
+testLA$property_type <- as.factor(testLA$property_type)
+
+trainLA$host_response_time <- as.factor(trainLA$host_response_time)
+testLA$host_response_time <- as.factor(testLA$host_response_time)
+
+trainLA$cancellation_policy <- as.factor(trainLA$cancellation_policy)
+testLA$cancellation_policy <- as.factor(testLA$cancellation_policy)
+```
+
+###### **Mutate Columns**
+
+```{r}
+trainLA <- trainLA %>% mutate(host_days_active = Sys.Date() - host_since)
+testLA <- testLA %>% mutate(host_days_active = Sys.Date() - host_since)
+
+trainLA$host_days_active <- as.numeric(trainLA$host_days_active)
+testLA$host_days_active <- as.numeric(testLA$host_days_active)
+```
+
+###### **Drop Missing-Data/Single-Valued Columns**
+
+```{r}
+drop <- c("monthly_price", "square_feet", "randomControl", "weekly_price", "host_acceptance_rate", "state", "is_business_travel_ready", "host_has_profile_pic", "amenities", "host_verifications")
+
+trainLA <- trainLA[ , !(names(trainLA) %in% drop)]
+testLA <- testLA[ , !(names(testLA) %in% drop)]
+```
+
+###### **Process Amenities and Host Verifications**
+
+```{r, message=FALSE}
+trainLAamenities <- read_csv("airbnbTrainLAamenities.csv")
+testLAamenities <- read_csv("airbnbTestLAamenities.csv")
+
+trainLA <- dplyr::inner_join(trainLA, trainLAamenities)
+testLA <- dplyr::inner_join(testLA, testLAamenities)
+
+trainLAhost_ver <- read_csv("airbnbTrainLAhost_verifications.csv")
+testLAhost_ver <- read_csv("airbnbTestLAhost_verifications.csv")
+
+trainLA <- dplyr::inner_join(trainLA, trainLAhost_ver, by = 'id')
+testLA <- dplyr::inner_join(testLA, testLAhost_ver, by = 'id')
+```
+
+###### **Remove Columns containing NA values**
+
+```{r}
+trainLAna <- trainLA[ , colSums(is.na(trainLA)) == 0]
+testLAna <- testLA[ , colSums(is.na(testLA)) == 0]
+```
+
+##### **Predictive Analysis**
+
+From our analysis, we short-listed a few variables that we thought were best suited to make predictions from. We realized that reviews, some important amenities like check in, friendliness in terms of the customer, rooms, the type of property, the reputation of the host, geographical importance and some other services like electronics and security impacted the booking rate positively. 
+
+The variables are listed as follows:
+
+review_scores_rating, cleaning_fee, host_is_superhost, check_in_24h, latitude, longitude, child_friendly, internet, price, high_end_electronics, white_goods, self_check_in, room_type, bed_type, cancellation_policy, reviews, instant_bookable, secure, property_type, bedrooms, bathrooms, host_listings_count, availability_365  
+
+Based on the variables mentioned above, we ran models to test the performance metrics and found out that ‘Gradient Boosting’ performed the best in predicting booking rates for properties in LA. This was decided based on the metrics generated at multiple cutoff levels giving us the best sensitivity, specificity and accuracy in addition to a high ‘Area-under-thecurve (AUC)’.
+
+```{r, include=FALSE}
+set.seed(123)
+
+dfTrain1 <- trainLAna %>% sample_frac(0.7) 
+dfTest1 <- dplyr::setdiff(trainLAna, dfTrain1)
+
+colsToFactor <- c('bed_type', 'room_type', 'property_type', 'cancellation_policy', 'host_identity_verified', 'host_is_superhost','instant_bookable','is_location_exact','require_guest_phone_verification','require_guest_profile_picture','requires_license')
+
+dfTrain1 <- dfTrain1 %>%
+  mutate_at(colsToFactor, ~factor(.))
+
+dfTest1 <- dfTest1 %>%
+  mutate_at(colsToFactor, ~factor(.))
+```
+
+```{r}
+set.seed(123)
+model<- gbm(high_booking_rate ~ .-host_since, data = dfTrain1, distribution = "bernoulli", n.trees = 500, shrinkage = 0.08, interaction.depth = 7, cv.folds = 5, n.cores = NULL, verbose = FALSE)
+```
+
+## Variable Importance
+
+```{r}
+summary(model, plotit = FALSE)
+```
+
+## Based on our exploratory analysis done on various variables and the variable importance achieved from the 'gradient boost' model, the final set of variables selected for our model helps us in correctly predicting the booking rates in LA.
+
+```{r}
+modelBoost <- gbm(high_booking_rate ~ review_scores_rating + cleaning_fee + host_is_superhost + check_in_24h + latitude + longitude + child_friendly + internet + price + high_end_electronics + white_goods + self_check_in + room_type + bed_type + cancellation_policy + reviews + instant_bookable + secure + property_type + bedrooms + bathrooms + host_listings_count + availability_365, data = dfTrain1, distribution = "bernoulli", n.trees = 500, shrinkage = 0.08, interaction.depth = 7, cv.folds = 5, n.cores = NULL, verbose = FALSE)
+```
+
+```{r, include = FALSE}
+saveRDS(modelBoost, "modelBoost.rds")
+```
+
+---
+
+#### **Results and Findings**
+
+##### **Booking Rate Data Split**
+
+```{r}
+trainLAHBR <- trainLAna %>% filter(high_booking_rate == 1)
+trainLALBR <- dplyr::setdiff(trainLAna, trainLAHBR)
+```
+
+##### **Host Verification Methods Analysis**
+
+In the radar chart below, we compare the different host verification methods for the high and low booking rate properties. We see that for most of the verification methods including phone and email, there isn’t much difference between the two types of booking rates. But, in case of reviews as a host verification method, we observe that properties having higher booking rate tend to have been verified via reviews compared to low booked properties.
+
+```{r, echo=FALSE}
+trainLAHBRhost_ver_analysis <- data.frame(
+  group = c("Phone", "Email", "Reviews", "Weibo", "Offline Government ID", "Selfie", "work_email", "Google", "Facebook"),
+  value = c(sum(trainLAHBR$phone), sum(trainLAHBR$email), sum(trainLAHBR$reviews), sum(trainLAHBR$weibo), sum(trainLAHBR$offline_government_id), sum(trainLAHBR$selfie), sum(trainLAHBR$work_email), sum(trainLAHBR$google), sum(trainLAHBR$facebook))
+  )
+
+trainLAHBRhost_ver_analysis <- trainLAHBRhost_ver_analysis %>% mutate(value = (value/6561)*100) %>% tidyr::spread('group', 'value')
+
+trainLALBRhost_ver_analysis <- data.frame(
+  group = c("Phone", "Email", "Reviews", "Weibo", "Offline Government ID", "Selfie", "work_email", "Google", "Facebook"),
+  value = c(sum(trainLALBR$phone), sum(trainLALBR$email), sum(trainLALBR$reviews), sum(trainLALBR$weibo), sum(trainLALBR$offline_government_id), sum(trainLALBR$selfie), sum(trainLALBR$work_email), sum(trainLALBR$google), sum(trainLALBR$facebook))
+  )
+
+trainLALBRhost_ver_analysis <- trainLALBRhost_ver_analysis %>% mutate(value = (value/17514)*100) %>% tidyr::spread('group', 'value')
+
+data <- rbind(trainLAHBRhost_ver_analysis, trainLALBRhost_ver_analysis)
+
+rownames(data) <- paste(c('High', 'Low'), "Booking Rate", sep=" ")
+
+data <- rbind(rep(100,9) , rep(0,9) , data)
+
+colors_border = c("#f8766d", "#00bfc4")
+colors_in = c("#f8766d", "#00bfc4")
+
+radarchart(data  , axistype=1 , 
+    pcol=colors_border , pfcol=colors_in , plwd=4 , plty=1,
+    cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0,20,5), cglwd=0.8,
+    vlcex=0.8 
+    )
+
+legend(x=0.7, y=1, legend = rownames(data[-c(1,2),]), bty = "n", pch=20 , col=colors_in , text.col = "black", cex=1.2, pt.cex=2)
+```
+
+##### **Amenities Analysis**
+
+```{r, include=FALSE}
+booking_rate <- c("High" , "Low")
+
+value5 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$bbq))
+
+bbq_low_booking <- round((value5[3]/(value5[3]+value5[1]))*100, digits = 2)
+bbq_high_booking <- round((value5[4]/(value5[4]+value5[2]))*100, digits = 2)
+
+bbq <- c(bbq_high_booking, bbq_low_booking)
+
+value14 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$elevator))
+
+el_low_booking <- round((value14[3]/(value14[3]+value14[1]))*100, digits = 2)
+el_high_booking <- round((value14[4]/(value14[4]+value14[2]))*100, digits = 2)
+
+el <- c(el_high_booking, el_low_booking)
+
+value15 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$gym))
+
+gym_low_booking <- round((value15[3]/(value15[3]+value15[1]))*100, digits = 2)
+gym_high_booking <- round((value15[4]/(value15[4]+value15[2]))*100, digits = 2)
+
+gym <- c(gym_high_booking, gym_low_booking)
+
+value18 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$hot_tub_sauna_or_pool))
+
+htsp_low_booking <- round((value18[3]/(value18[3]+value18[1]))*100, digits = 2)
+htsp_high_booking <- round((value18[4]/(value18[4]+value18[2]))*100, digits = 2)
+
+htsp <- c(htsp_high_booking, htsp_low_booking)
+
+value7 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$nature_and_views))
+
+nav_low_booking <- round((value7[3]/(value7[3]+value7[1]))*100, digits = 2)
+nav_high_booking <- round((value7[4]/(value7[4]+value7[2]))*100, digits = 2)
+
+nav <- c(nav_high_booking, nav_low_booking)
+
+value16 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$outdoor_space))
+
+os_low_booking <- round((value16[3]/(value16[3]+value16[1]))*100, digits = 2)
+os_high_booking <- round((value16[4]/(value16[4]+value16[2]))*100, digits = 2)
+
+os <- c(os_high_booking, os_low_booking)
+
+value2 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$parking))
+
+parking_low_booking <- round((value2[3]/(value2[3]+value2[1]))*100, digits = 2)
+parking_high_booking <- round((value2[4]/(value2[4]+value2[2]))*100, digits = 2)
+
+park <- c(parking_high_booking, parking_low_booking)
+
+value22 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$private_entrance))
+
+pve_low_booking <- round((value22[3]/(value22[3]+value22[1]))*100, digits = 2)
+pve_high_booking <- round((value22[4]/(value22[4]+value22[2]))*100, digits = 2)
+
+pve <- c(pve_high_booking, pve_low_booking)
+
+df1 <- data.frame(booking_rate, bbq, el, gym, htsp, nav, os, park, pve)
+
+dfTall1 <- df1 %>% gather(key = Amenities, value = Percentage, bbq:pve)
+```
+
+We can observe from the graph below that providing outdoor amenities has a positive impact on the booking rate but is not very significant. There are a few exceptions like gym, hot tub/sauna/pool, and elevator, which have a negative effect on booking rate. This might be due to the fact that LA is a coastal area and tourists prefer the beaches over indoor pools, a house over an apartment (eliminating the need for elevators) and relaxing over working out.
+
+```{r, echo=FALSE}
+ggplot(dfTall1, aes(x = Amenities, y = Percentage, fill = booking_rate)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  ggtitle("Outdoor Amenities Impacting Booking Rate") + 
+  scale_x_discrete(labels=c("bbq" = "BBQ", "el" = "Elevator", "htsp" = "Hot Tub/Sauna/Pool", "nav" = "Nature and Views", "os" = "Outdoor Space", "park" = "Parking Available", "pve" = "Private Entrance", "gym" = "Gym")) +
+  scale_fill_discrete(name="Booking Rate") +
+  geom_text(aes(label = Percentage), hjust = 0, position = position_dodge(1)) +
+  scale_y_continuous(limits=c(0, 105)) +
+  coord_flip()
+```
+
+```{r, include=FALSE}
+value3 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$air_conditioning))
+
+ac_low_booking <- round((value3[3]/(value3[3]+value3[1]))*100, digits = 2)
+ac_high_booking <- round((value3[4]/(value3[4]+value3[2]))*100, digits = 2)
+
+ac <- c(ac_high_booking, ac_low_booking)
+
+value11 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$coffee_machine))
+
+cm_low_booking <- round((value11[3]/(value11[3]+value11[1]))*100, digits = 2)
+cm_high_booking <- round((value11[4]/(value11[4]+value11[2]))*100, digits = 2)
+
+cm <- c(cm_high_booking, cm_low_booking)
+
+value4 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$high_end_electronics))
+
+hee_low_booking <- round((value4[3]/(value4[3]+value4[1]))*100, digits = 2)
+hee_high_booking <- round((value4[4]/(value4[4]+value4[2]))*100, digits = 2)
+
+hee <- c(hee_high_booking, hee_low_booking)
+
+value19 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$internet))
+
+it_low_booking <- round((value19[3]/(value19[3]+value19[1]))*100, digits = 2)
+it_high_booking <- round((value19[4]/(value19[4]+value19[2]))*100, digits = 2)
+
+it <- c(it_high_booking, it_low_booking)
+
+value10 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$tv))
+
+tv_low_booking <- round((value10[3]/(value10[3]+value10[1]))*100, digits = 2)
+tv_high_booking <- round((value10[4]/(value10[4]+value10[2]))*100, digits = 2)
+
+tv <- c(tv_high_booking, tv_low_booking)
+
+value13 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$white_goods))
+
+wg_low_booking <- round((value13[3]/(value13[3]+value13[1]))*100, digits = 2)
+wg_high_booking <- round((value13[4]/(value13[4]+value13[2]))*100, digits = 2)
+
+wg <- c(wg_high_booking, wg_low_booking)
+
+df2 <- data.frame(booking_rate, ac, cm, hee, it, tv, wg)
+
+dfTall2 <- df2 %>% gather(key = Amenities, value = Percentage, ac:wg)
+```
+
+Electronics and gadgets like TV, internet and air conditioner are basic amenities in this modern era and thus are expected from the owner. Also, the owners keep up with these demands and thus these amenities do not contribute towards high booking rate. High-end electronics such as home entertainment systems are generally very expensive. Usually, customers are not looking for these amenities and they do not play a major role in helping them make booking decisions. Although, we observed that the customers really get upset if a coffee machine is not provided.
+
+```{r, echo=FALSE}
+ggplot(dfTall2, aes(x = Amenities, y = Percentage, fill = booking_rate)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  ggtitle("Electronic/Gadget Amenities Impacting Booking Rate") + 
+  scale_x_discrete(labels=c("ac" = "Air Conditioning", "cm" = "Coffee Machine", "hee" = "High-End Electonics", "it" = "Internet", "tv" = "TV", "wg" = "White Goods")) +
+  scale_fill_discrete(name="Booking Rate") +
+  geom_text(aes(label = Percentage), hjust = 0, position = position_dodge(1)) +
+  scale_y_continuous(limits=c(0, 105)) +
+  coord_flip()
+```
+
+```{r, include=FALSE}
+value6 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$balcony))
+
+balcony_low_booking <- round((value6[3]/(value6[3]+value6[1]))*100, digits = 2)
+balcony_high_booking <- round((value6[4]/(value6[4]+value6[2]))*100, digits = 2)
+
+balcony <- c(balcony_high_booking, balcony_low_booking)
+
+value12 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$cooking_basics))
+
+cb_low_booking <- round((value12[3]/(value12[3]+value12[1]))*100, digits = 2)
+cb_high_booking <- round((value12[4]/(value12[4]+value12[2]))*100, digits = 2)
+
+cb <- c(cb_high_booking, cb_low_booking)
+
+value1 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$child_friendly))
+
+cf_low_booking <- round((value1[3]/(value1[3]+value1[1]))*100, digits = 2)
+cf_high_booking <- round((value1[4]/(value1[4]+value1[2]))*100, digits = 2)
+
+cf <- c(cf_high_booking, cf_low_booking)
+
+value27 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$event_suitable))
+
+eve_low_booking <- round((value27[3]/(value27[3]+value27[1]))*100, digits = 2)
+eve_high_booking <- round((value27[4]/(value27[4]+value27[2]))*100, digits = 2)
+
+eve <- c(eve_high_booking, eve_low_booking)
+
+value21 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$pets_allowed))
+
+pets_low_booking <- round((value21[3]/(value21[3]+value21[1]))*100, digits = 2)
+pets_high_booking <- round((value21[4]/(value21[4]+value21[2]))*100, digits = 2)
+
+pets <- c(pets_high_booking, pets_low_booking)
+
+value25 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$smoking_allowed))
+
+sa_low_booking <- round((value25[3]/(value25[3]+value25[1]))*100, digits = 2)
+sa_high_booking <- round((value25[4]/(value25[4]+value25[2]))*100, digits = 2)
+
+sa <- c(sa_high_booking, sa_low_booking)
+
+value23 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$secure))
+
+sec_low_booking <- round((value23[3]/(value23[3]+value23[1]))*100, digits = 2)
+sec_high_booking <- round((value23[4]/(value23[4]+value23[2]))*100, digits = 2)
+
+sec <- c(sec_high_booking, sec_low_booking)
+
+df3 <- data.frame(booking_rate, balcony, cb, cf, eve, pets, sa, sec)
+
+dfTall3 <- df3 %>% gather(key = Amenities, value = Percentage, balcony:sec)
+```
+
+It is evident from the graph below that listings which are child friendly, have a balcony or provide cooking basics drive up the booking rates (almost double the rate of booking). This means investors should focus on investing in properties with these add-on amenities.
+
+```{r, echo=FALSE}
+ggplot(dfTall3, aes(x = Amenities, y = Percentage, fill = booking_rate)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  ggtitle("Add-On Amenities Impacting Booking Rate") + 
+  scale_x_discrete(labels=c("balcony" = "Balcony", "cb" = "Cooking Basics", "cf" = "Child Friendly", "eve" = "Event Suitable", "pets" = "Pets Allowed", "sa" = "Smoking Allowed", "sec" = "Secure")) +
+  scale_fill_discrete(name="Booking Rate") +
+  geom_text(aes(label = Percentage), hjust = 0, position = position_dodge(1)) +
+  scale_y_continuous(limits=c(0, 100)) +
+  coord_flip()
+```
+
+```{r, include=FALSE}
+value8 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$bed_linen))
+
+bl_low_booking <- round((value8[3]/(value8[3]+value8[1]))*100, digits = 2)
+bl_high_booking <- round((value8[4]/(value8[4]+value8[2]))*100, digits = 2)
+
+bl <- c(bl_high_booking, bl_low_booking)
+
+value9 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$breakfast))
+
+bf_low_booking <- round((value9[3]/(value9[3]+value9[1]))*100, digits = 2)
+bf_high_booking <- round((value9[4]/(value9[4]+value9[2]))*100, digits = 2)
+
+bf <- c(bf_high_booking, bf_low_booking)
+
+value17 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$host_greeting))
+
+hg_low_booking <- round((value17[3]/(value17[3]+value17[1]))*100, digits = 2)
+hg_high_booking <- round((value17[4]/(value17[4]+value17[2]))*100, digits = 2)
+
+hg <- c(hg_high_booking, hg_low_booking)
+
+value20 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$long_term_stays))
+
+lts_low_booking <- round((value20[3]/(value20[3]+value20[1]))*100, digits = 2)
+lts_high_booking <- round((value20[4]/(value20[4]+value20[2]))*100, digits = 2)
+
+lts <- c(lts_high_booking, lts_low_booking)
+
+value24 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$self_check_in))
+
+sci_low_booking <- round((value24[3]/(value24[3]+value24[1]))*100, digits = 2)
+sci_high_booking <- round((value24[4]/(value24[4]+value24[2]))*100, digits = 2)
+
+sci <- c(sci_high_booking, sci_low_booking)
+
+value26 <- as.vector(table(trainLAna$high_booking_rate, trainLAna$accessible))
+
+acc_low_booking <- round((value26[3]/(value26[3]+value26[1]))*100, digits = 2)
+acc_high_booking <- round((value26[4]/(value26[4]+value26[2]))*100, digits = 2)
+
+acc <- c(acc_high_booking, acc_low_booking)
+
+df4 <- data.frame(booking_rate, bl, bf, hg, lts, sci, acc)
+
+dfTall4 <- df4 %>% gather(key = Amenities, value = Percentage, bl:acc)
+```
+
+The graph below depicts the importance of services when it comes to making booking decisions.
+
+As can be seen, providing the option of check-in to the customers boosts the chances of the property getting booked significantly as customers prefer a hassle-free experience. Also, Los Angeles being a major tourist attraction, people like spending time here. Hence, having long-term stays as a service widens the potential customer range. 
+
+In all, each service increases the chances of achieving a high booking rate, the exception being a breakfast service which is not a major pull for customers.
+
+```{r, echo=FALSE}
+ggplot(dfTall4, aes(x = Amenities, y = Percentage, fill = booking_rate)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  ggtitle("Services Impacting Booking Rate") + 
+  scale_x_discrete(labels=c("bl" = "Bed Linen", "bf" = "Breakfast", "hg" = "Host Greeting", "lts" = "Long Term Stays", "sci" = "Self Check-in", "acc" = "Accessible")) +
+  scale_fill_discrete(name="Booking Rate") +
+  geom_text(aes(label = Percentage), hjust = 0, position = position_dodge(1)) +
+  scale_y_continuous(limits=c(0, 100)) +
+  coord_flip()
+```
+
+##### **Host Properties Percentage Ratio**
+
+Some of the host properties that were analyzed in the below graph are:
+
+  • Host Identity Verified
+  • Host Is Superhost
+  • Instant Bookable
+  • Location Exact
+  
+Observing these properties for both high and low booking rate properties, we see a significant difference when the host is a superhost. Properties having the superhost tag have higher booking rates when compared to other properties. Whereas, the other host properties have a marginal edge in the case of high booking rate properties.
+
+```{r, echo=FALSE}
+
+group <- rep(c("Host Identity Verified", "Host is Superhost", "Instant Bookable", "Location Exact"), 2)
+values <- c(sum(trainLALBR$host_identity_verified)/17514, sum(trainLALBR$host_is_superhost)/17514, sum(trainLALBR$instant_bookable)/17514, sum(trainLALBR$is_location_exact)/17514, sum(trainLAHBR$host_identity_verified)/6591, sum(trainLAHBR$host_is_superhost)/6591, sum(trainLAHBR$instant_bookable)/6591, sum(trainLAHBR$is_location_exact)/6591)
+booking_rate <- c(rep("Low Booking Rate" , 4) , rep("High Booking Rate" , 4))
+
+data = data.frame(group, values, booking_rate)
+
+data <- data %>% mutate(values = values*100)
+
+ggplot(data, aes(fill=booking_rate, y=values, x=group)) + 
+    geom_bar(position="dodge", stat="identity") +
+  ggtitle("Host Properties for High and Low Booking Rates")
+```
+
+##### **Pricing by Neighbourhood (High/Low Booking Rate)**
+
+This graph plots the top 10 percentile of the most populated neighbourhoods vs average price of the property with respect to booking rate. We observe that properites in Bell Air and Beverly Hills have a very high price and because of this, they might not have high booking rates. Whereas properties in Downtown, Echo Park, Venice and others that have considerably lower average prices tend to have high booking rates.
+
+```{r, echo=FALSE}
+high<- trainLA %>% 
+        filter(high_booking_rate==1)
+low<- trainLA %>% 
+        filter(high_booking_rate==0)
+
+temp1 <- high %>% 
+        group_by(neighbourhood,high_booking_rate) %>% 
+        filter(any(!is.na(neighbourhood))) %>% 
+        summarise(density = n(), avgPrice = mean(price)) %>% 
+        arrange(desc(neighbourhood)) 
+temp1 <- temp1 %>% 
+       filter(density > quantile(temp1$density, probs = c(0.1, 0.90)[2]))
+
+
+temp2 <- low %>% 
+        group_by(neighbourhood,high_booking_rate) %>% 
+        filter(any(!is.na(neighbourhood))) %>% 
+        summarise(density = n(), avgPrice = mean(price)) %>% 
+        arrange(desc(neighbourhood)) 
+temp2 <- temp2 %>% 
+       filter(density > quantile(temp2$density, probs = c(0.1, 0.90)[2]))
+
+total <-rbind(temp1, temp2)
+
+plot <- ggplot(data=total, aes(x= neighbourhood, y=avgPrice, fill=factor(high_booking_rate))) + 
+      geom_bar(position = 'dodge', stat='identity') + labs(fill = booking_rate,  
+            title = paste(" Average Price of Top-10 Percentile Properties")) +
+            theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_fill_discrete(name="Booking Rate")
+    
+plot
+```
+
+##### **Map Visualization of High and Low Booking Rate Properties**
+
+```{r, include=FALSE}
+temp_high <- high %>% 
+        group_by(neighbourhood) %>% 
+        filter(any(!is.na(neighbourhood))) %>% 
+        summarise(NumOfProp = n(), avgPrice = mean(price), latitude=mean (latitude), longitude = mean(longitude)) %>% 
+        arrange(desc(NumOfProp, avgPrice))
+
+temp_low <- low %>% 
+        group_by(neighbourhood) %>% 
+        filter(any(!is.na(neighbourhood))) %>% 
+        summarise(NumOfProp = n(), avgPrice = mean(price), latitude= mean(latitude), longitude = mean(longitude)) %>% 
+        arrange(desc(NumOfProp, avgPrice))
+
+height <- max(high$latitude) - min(high$latitude)
+width <- max(high$longitude) - min(high$longitude)
+
+LA_borders <- c(bottom  = min(temp_high$latitude),
+                 top     = max(temp_high$latitude),
+                 left    = min(temp_high$longitude) - 0.1 * width,
+                 right   = max(temp_high$longitude) + 0.1 * width)
+
+maphigh <- get_stamenmap(LA_borders, zoom =10, maptype = "toner-lite")
+```
+
+The first map plot shows the distribution of properties in LA and their average prices with respect to high booking rates. We observe that the number of properties in and around Long-beach, Venice beach and Mid- Wildshire are significantly higher than other places. Also the average prices of these properties lie somewhere in the midrange. Properties in Malibu beach and Rolling Hills are few and average prices are pretty high.
+
+
+```{r, echo=FALSE}
+ggmap(maphigh) +
+   geom_point(data = temp_high, mapping = aes(x = longitude, y = latitude, 
+                                        size = NumOfProp,col = avgPrice)) +
+   scale_color_distiller(palette = "YlOrRd", direction = 1)+
+  labs(x = "Longitude", y = "Latitude") + ggtitle("High booking rate, average price & number of properties per location")
+```
+
+The second map plot shows the distribution of properties in LA and thier average prices with respect to low booking rates. In this map plot, we observe a similar trend as the first map, but average price range is this case is considerably higher than the properties with high booking rate. Thus, we can conclude that, properties with lower average prices tend to have a high booking rate.
+
+```{r, echo=FALSE}
+maplow <- get_stamenmap(LA_borders, zoom =10, maptype = "toner-lite")
+
+ggmap(maplow) +
+   geom_point(data = temp_low, mapping = aes(x = longitude, y = latitude, 
+                                        size = NumOfProp,col = avgPrice)) +
+   scale_color_distiller(palette = "YlOrRd", direction = 1) +
+  labs(x = "Longitude", y = "Latitude") + ggtitle("Low booking rate, average price & number of properties per Location")
+```
+
+
+##### **Bedroom and Bathroom Requirement Analysis on High/Low Booking Rate**
+
+The stats for bedroom vs bathroom do not follow a specific trend. From the plot, we can get an idea of combinations of bed vs bath arrangement for higher booking rate properties. We can definitely say that a higher number of bedrooms and bathrooms won’t contribute to an increase in booking rate. We will check its actual significance later in the modeling.
+
+```{r, echo=FALSE}
+bedBath <-
+  trainLAna %>% 
+  ggplot(aes(x = bedrooms, y = bathrooms, color = factor(high_booking_rate))) +
+  geom_point() + ggtitle("Bookings : Bedroom Vs Bathroom Count") + labs(color="High Booking Rate")
+
+bedBath
+```
+
+##### **Property and Room Type Analysis**
+
+This graph shows us which property type and room type can be better for investment by considering overall ratings vs price. For the entire room and private room category, guest house, guest suite, and bungalows are cheaper with good ratings. Villas are not only costlier but also rated low. Although hotel rooms are rated very highly, those are cheaper as compared to shared rooms. Thus, overall we can say that cheaper properties are highly rated. Hence, it’s wise to invest in them. It’s like an investment with lower risk and higher chances of benefits.
+
+```{r, echo=FALSE}
+pct_ptype <- trainLAna %>% 
+  group_by(property_type) %>% 
+  tally() %>% 
+  mutate(pct = 100*n/sum(n)) %>% 
+  arrange(desc(n), desc(pct))
+
+propRoom <- left_join(trainLAna, pct_ptype, by = c("property_type" = "property_type"), all = TRUE)
+
+propRoom <- transform(propRoom, property_type = ifelse(pct < 1, "Other", as.character(property_type)))
+
+propRoom$property_type <- as.factor(propRoom$property_type)
+
+propRoom %>% 
+  group_by(room_type, property_type)%>% 
+  summarise(Number = n(),
+            MeanPrice = mean(price, na.rm = T),
+            MeanRating = mean(review_scores_rating, na.rm = T)) %>%
+  ggplot() + 
+  geom_point(aes(x = room_type, y = property_type, alpha = MeanRating, size = MeanPrice)) + scale_colour_gradient(palette="Dark2") +
+  ggtitle("Relationship Between Property Type, Room Type Rating, and Price")
+```
+
+##### **Cut-off, Specificity and Sensititvity Analysis for the Gradient Boost Model**
+
+• Accuracy tells us how correctly our model classifies the booking rate of a property in LA.
+• Sensitivity tells us, out of all the properties classfied as high booking rates, how many does our model predict the same correctly.
+• Specificity tells us, out of all the properties classfied as low booking rates, how many does our model predict the same correctly.
+• Our goal here is to find the optimum threshold value that provides us with high Accuracy, Specifity and Sensitivity.
+
+
+```{r, include=FALSE}
+#modelBoost <- readRDS("modelBoost.rds")
+```
+
+```{r}
+stats <- function(x, model) {
+  
+            results <- model %>% 
+            predict(dfTest1, type='response') %>%	 
+	          bind_cols(dfTest1, predicted=.) %>%  
+	          mutate(predictedBookingRate = as.factor(ifelse(predicted>x,1,0)))
+            
+            spec = specificity(results$predictedBookingRate, as.factor(results$high_booking_rate))
+            sens = sensitivity(results$predictedBookingRate, as.factor(results$high_booking_rate))
+            
+            return(c(list(cutoff = x, specificity = spec, sensitivity = sens), results))
+}
+
+x <- c(0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+data <- data.frame(cutoff = c(), specificity = c(), sensitivity = c())
+
+for (val in x) {
+  data <- rbind(data, stats(val, modelBoost)[1:3])
+}
+
+ggplot(data, aes(cutoff)) +                   
+  geom_line(aes(y=specificity, color = 'Sensitivity')) +
+  geom_line(aes(y=sensitivity, color = 'Specificity')) +
+  ggtitle("Sensitivity and Specificity Analysis vs Cutoff") +
+  scale_fill_discrete(breaks = c("Specificity", "Sensitivity"))
+```
+
+• Based on the graph above, we observe that the optimum threshold value is approximately 0.33.
+• If the investor is risk seeking, we would aim for higher sensitivity and lower specifity which can be obtained by lowering the threshold value.
+• If the investor is risk averse, we would aim for a lower sensitivity and higher specifity which can be obtained by increasing the threshold value.
+• In our model, we are assuming that the investor is risk neutral, thus we have taken a cut-off of 0.33 which strikes the right balance between specificity and sensitivity.
+
+##### **Confusion Matrix and Statistics for best Cutoff**
+
+We observe that the model produces a high AUC value of 91.72%. We can conclude that the investor can rely on our predictions for high booking rate properties in LA region.
+
+```{r}
+results <- modelBoost %>% 
+            predict(dfTest1, type='response') %>%	 
+	          bind_cols(dfTest1, predicted=.) %>%  
+	          mutate(predictedBookingRate = as.factor(ifelse(predicted>0.3,1,0)))
+
+#results%>% 
+#  xtabs(~predictedBookingRate+high_booking_rate, .) %>% 
+ # confusionMatrix(positive='1')
+
+results %>% 
+  mutate(high_booking_rate=as.factor(high_booking_rate)) %>% 
+  conf_mat(high_booking_rate, predictedBookingRate) %>% 
+  autoplot(type = 'heatmap')
+
+```
+
+```{r, echo=FALSE}
+auc(results$high_booking_rate, results$predicted)
+```
+
+---
+
+#### **Conclusion**
+
+The exploratory analysis above highlighted some interesting patterns and factors that can help elevate the booking rate:
+• Investors should invest in properties that are around the prime locations such as Marina Bay, Silver Lake, Westchester.
+• For upgrades, investors should invest in statistically significant factors such as Host is superhost, child friendliness, to achieve higher booking rate.
+• Cheaper Airbnb rentals have higher booking rate than costlier rentals. Hence, investors should invest in the cheaper rentals for significant higher booking rate.
+LA being one of the biggest business hubs, we wanted to gather insights from this segment of the market. However, we were limited in our research as the variable "is_business_ready" did not have well distributed data. We would like to further analyze this segment of the market and suggest solutions to cater to their needs.
+
+#### **References**
+
+Barzilay, O. (2017. April 4). 10 Things To Consider Before Buying An Airbnb Investment. Retrieved May 2, 2020, from
+  https://www.forbes.com/sites/omribarzilay/2017/04/04/things-to-considerbefore-buying-an-airbnb-investment/#2ce74d5c4869
+Inside Airbnb: Los Angeles. Adding data to the debate. (n.d.). Retrieved May 2, 2020 from 
+  http://insideairbnb.com/los-angeles/
+Shatford, S. (2019, June 27). Vacation Rental Investment Case Study | Best Places To Buy. Retrieved May2, 2020, from         https://www.airdna.co/blog/short-term-real-estateinvestment
+
+---
